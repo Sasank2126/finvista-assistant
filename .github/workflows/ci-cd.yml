@@ -1,0 +1,129 @@
+name: FinVista CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION:       us-east-1
+  ECR_REPOSITORY:   finvista-assistant
+  EKS_CLUSTER_NAME: finvista-cluster
+  K8S_NAMESPACE:    finvista
+
+jobs:
+  # ── Job 1: Test ───────────────────────────────────────────────────────────────
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run unit tests
+        run: pytest tests/ -v --cov=app --cov-report=xml
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+  # ── Job 2: Build & Push ───────────────────────────────────────────────────────
+  build-and-push:
+    name: Build & Push to ECR
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      image_uri: ${{ steps.set-uri.outputs.image_uri }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image URI output
+        id: set-uri
+        run: |
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}"
+          echo "image_uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+
+      - name: Build & push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.set-uri.outputs.image_uri }}:${{ github.sha }}
+            ${{ steps.set-uri.outputs.image_uri }}:latest
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+  # ── Job 3: Deploy to EKS ──────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to EKS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # FIX: Apply ALL manifests including secret and deployment
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f k8s/01-namespace-configmap.yaml
+          kubectl apply -f k8s/02-secret.yaml
+          kubectl apply -f k8s/03-pvc.yaml
+          kubectl apply -f k8s/05-service-ingress.yaml
+          kubectl apply -f k8s/06-hpa.yaml
+
+      - name: Update deployment image
+        run: |
+          IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          # FIX: Apply deployment with the new image tag via sed, not kubectl set image
+          sed "s|YOUR_ECR_REGISTRY/finvista-assistant:latest|${IMAGE}|g" \
+            k8s/04-deployment.yaml | kubectl apply -f -
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/finvista-assistant \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+
+      - name: Show deployment status
+        run: |
+          kubectl get pods    -n ${{ env.K8S_NAMESPACE }}
+          kubectl get service -n ${{ env.K8S_NAMESPACE }}

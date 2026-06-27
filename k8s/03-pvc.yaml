@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: finvista-chroma-pvc
+  namespace: finvista
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3          # AWS EKS default; change for other clouds
+  resources:
+    requests:
+      storage: 10Gi

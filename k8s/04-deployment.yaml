@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finvista-assistant
+  namespace: finvista
+  labels:
+    app: finvista-assistant
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: finvista-assistant
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: finvista-assistant
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: finvista-assistant
+          image: 106062677957.dkr.ecr.eu-north-1.amazonaws.com/finvista-assistant:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8501
+              name: streamlit
+          envFrom:
+            - configMapRef:
+                name: finvista-config
+          env:
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: finvista-secrets
+                  key: GEMINI_API_KEY
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: finvista-secrets
+                  key: GROQ_API_KEY
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: chroma-storage
+              mountPath: /app/chroma_db
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 40
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+      volumes:
+        - name: chroma-storage
+          emptyDir: {}

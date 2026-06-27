@@ -1,0 +1,47 @@
+# ── Python ─────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual environments ────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env/
+
+# ── Secrets — NEVER send to Docker build context ───────────────────
+.env
+*.key
+*.pem
+
+# ── ChromaDB vector store — rebuilt inside container ───────────────
+chroma_db/
+
+# ── Test & coverage artifacts ──────────────────────────────────────
+tests/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ── Dev & editor files ─────────────────────────────────────────────
+.git/
+.gitignore
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# ── Documentation — not needed in runtime image ────────────────────
+README.md
+STEP_BY_STEP_GUIDE.md
+docs/
+
+# ── Uploaded PDFs — not needed in image ────────────────────────────
+uploads/
+*.pdf

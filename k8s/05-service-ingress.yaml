@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: finvista-service
+  namespace: finvista
+  labels:
+    app: finvista-assistant
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "600"
+    service.beta.kubernetes.io/aws-load-balancer-connection-draining-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-connection-draining-timeout: "60"
+spec:
+  type: LoadBalancer
+  selector:
+    app: finvista-assistant
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8501
+      protocol: TCP
