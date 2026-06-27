@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  AWS_REGION:       us-north-1
+  AWS_REGION:       eu-north-1
   ECR_REPOSITORY:   finvista-assistant
   EKS_CLUSTER_NAME: finvista-cluster
   K8S_NAMESPACE:    finvista
